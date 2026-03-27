@@ -7,31 +7,19 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import Aioc
 
 
 @register(
-    "astrbot_plugin_group_invite",
+    "astrbot_plugin_group_invite_auto_approve",
     "星陨",
     "根据群信息自动进群",
-    "1.0.5",
+    "1.0.6",
     "https://github.com/XingYunStar/astrbot_plugin_group_invite_auto_approve"
 )
 class GroupInvitePlugin(Star):
-    def __init__(self, context: Context, config: dict = None):
+    def __init__(self, context: Context, config: dict):
         super().__init__(context)
-        # 配置会通过 __init__ 的 config 参数传入
-        self.config = config or {}
-        
-        # 调试：打印收到的配置内容
-        logger.info(f"收到原始配置: {self.config}")
-        
-        # 合并默认配置
-        default_config = self._get_default_config()
-        for key, default_value in default_config.items():
-            if key not in self.config:
-                self.config[key] = default_value
-                logger.info(f"使用默认配置: {key} = {default_value}")
-            else:
-                logger.info(f"使用用户配置: {key} = {self.config[key]}")
-        
-        logger.info(f"群邀请插件已加载，最终配置: {self._get_config_summary()}")
+        # config 直接就是配置字典，结构扁平
+        self.config = config
+        logger.info(f"群邀请插件已加载，撤回时间: {self.config.get('recall_time', 'N/A')}")
+        logger.info(f"配置详情: {self._get_config_summary()}")
     
     def _get_config_summary(self) -> str:
         """获取配置摘要"""
@@ -42,24 +30,7 @@ class GroupInvitePlugin(Star):
     
     def get_config(self, key: str, default=None):
         """获取配置值"""
-        # 直接从 self.config 获取
-        if key in self.config:
-            return self.config[key]
-        return default
-    
-    def _get_default_config(self) -> dict:
-        """获取默认配置"""
-        return {
-            "keywords": ["原神", "星穹铁道", "绝区零"],
-            "auto_join": True,
-            "group_welcome_message": "我是机器人，欢迎使用。",
-            "private_reply_message": "已同意进群~",
-            "enable_log": True,
-            "check_group_memo": True,
-            "delay_after_join": 2,
-            "retry_on_failure": True,
-            "ignore_bot_self": True
-        }
+        return self.config.get(key, default)
     
     def contains_keywords(self, text: str) -> bool:
         """检查文本是否包含任何关键词"""
@@ -68,10 +39,6 @@ class GroupInvitePlugin(Star):
         
         text_lower = text.lower()
         keywords = self.get_config("keywords", [])
-        
-        # 确保 keywords 是列表
-        if isinstance(keywords, str):
-            keywords = [k.strip() for k in keywords.split(",") if k.strip()]
         
         for keyword in keywords:
             if keyword and keyword.lower() in text_lower:
@@ -82,10 +49,8 @@ class GroupInvitePlugin(Star):
     
     def contains_keywords_in_group(self, group_name: str, group_memo: str) -> bool:
         """检查群名或群介绍是否包含关键词（或关系）"""
-        # 检查群名
         if self.contains_keywords(group_name):
             return True
-        # 如果启用了群介绍检查，再检查群介绍
         if self.get_config("check_group_memo", True) and self.contains_keywords(group_memo):
             return True
         return False
@@ -202,7 +167,7 @@ class GroupInvitePlugin(Star):
                         if group_msg:
                             try:
                                 await self.send_message_with_retry(
-                                    lambda: client.api_call_action(
+                                    lambda: client.api.call_action(
                                         "send_group_msg",
                                         group_id=group_id,
                                         message=group_msg
@@ -237,10 +202,6 @@ class GroupInvitePlugin(Star):
         delay = self.get_config("delay_after_join", 2)
         retry = self.get_config("retry_on_failure", True)
         ignore_self = self.get_config("ignore_bot_self", True)
-        
-        # 处理 keywords 可能是字符串的情况
-        if isinstance(keywords, str):
-            keywords = [k.strip() for k in keywords.split(",") if k.strip()]
         
         config_text = (
             "📋 群邀请插件当前配置:\n\n"
