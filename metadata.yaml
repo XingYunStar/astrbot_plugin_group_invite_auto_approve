@@ -1,38 +1,6 @@
 name: astrbot_plugin_group_invite_auto_approve
-display_name: 根据群名称和群介绍关键词自动进群，并发送群消息与好友消息
-desc: AstrBot 自动同意加群插件 - 根据群名称或群简介关键词自动同意加群邀请
+display_name: 根据群信息自动进群
+desc: AstrBot 自动同意加群插件 - 根据群名称或群简介关键词自动同意加群邀请，并发送私聊消息和进群消息
 version: v1.0.0
 author: 星陨
 repo: https://github.com/XingYunStar/astrbot_plugin_group_invite_auto_approve
-tags: ["群管理", "自动化", "OneBot"]
-
-config:
-  keywords:
-    name: "关键词列表"
-    description: "当群名或群介绍包含这些关键词时自动进群"
-    type: "list"
-    default: ["原神", "星穹铁道", "绝区零"]
-    
-  auto_join:
-    name: "自动进群"
-    description: "是否自动进群（关闭后只发送私聊通知）"
-    type: "boolean"
-    default: true
-    
-  group_welcome_message:
-    name: "群欢迎消息"
-    description: "进群后发送的欢迎消息"
-    type: "string"
-    default: "我是机器人，欢迎使用。"
-    
-  private_reply_message:
-    name: "私聊回复"
-    description: "同意邀请后私聊回复邀请人的消息"
-    type: "string"
-    default: "已同意进群~"
-    
-  enable_log:
-    name: "启用日志"
-    description: "是否输出详细日志"
-    type: "boolean"
-    default: true
