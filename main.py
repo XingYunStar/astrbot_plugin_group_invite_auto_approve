@@ -8,8 +8,8 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import Aioc
 
 @register(
     "astrbot_plugin_group_invite",
-    "你的名字",
-    "根据群名和群介绍中的关键词自动处理群邀请",
+    "星陨",
+    "根据群信息自动进群",
     "1.0.0",
     "https://github.com/你的用户名/astrbot_plugin_group_invite"
 )
