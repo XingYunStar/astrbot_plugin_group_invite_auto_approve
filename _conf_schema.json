@@ -1,0 +1,75 @@
+{
+    "basic": {
+        "description": "基础设置",
+        "type": "object",
+        "hint": "群邀请自动处理插件的基础配置项",
+        "items": {
+            "keywords": {
+                "type": "list",
+                "description": "关键词列表",
+                "default": ["原神", "星穹铁道", "绝区零"],
+                "hint": "当群名或群介绍包含这些关键词时自动进群。支持多个关键词，用逗号分隔。",
+                "items": {
+                    "type": "string"
+                }
+            },
+            "auto_join": {
+                "type": "bool",
+                "description": "自动进群",
+                "default": true,
+                "hint": "是否自动进群。关闭后只发送私聊通知邀请人，不会自动进群。"
+            },
+            "group_welcome_message": {
+                "type": "string",
+                "description": "群欢迎消息",
+                "default": "我是机器人，欢迎使用。",
+                "hint": "进群后自动发送的欢迎消息。留空则不发送。"
+            },
+            "private_reply_message": {
+                "type": "string",
+                "description": "私聊回复",
+                "default": "已同意进群~",
+                "hint": "同意进群邀请后，私聊回复邀请人的消息。留空则不发送。"
+            },
+            "enable_log": {
+                "type": "bool",
+                "description": "启用日志",
+                "default": true,
+                "hint": "是否输出详细的处理日志，便于调试。"
+            },
+            "check_group_memo": {
+                "type": "bool",
+                "description": "检查群介绍",
+                "default": true,
+                "hint": "是否检查群介绍（group_memo）中的关键词。关闭后只检查群名。"
+            }
+        }
+    },
+    "advanced": {
+        "description": "高级设置",
+        "type": "object",
+        "hint": "高级配置，建议在熟悉插件功能后调整",
+        "items": {
+            "delay_after_join": {
+                "type": "int",
+                "description": "进群后延迟（秒）",
+                "default": 2,
+                "hint": "进群成功后延迟多少秒再发送欢迎消息。部分协议端进群需要时间同步。",
+                "minimum": 0,
+                "maximum": 10
+            },
+            "retry_on_failure": {
+                "type": "bool",
+                "description": "失败重试",
+                "default": true,
+                "hint": "发送消息失败时是否重试一次。"
+            },
+            "ignore_bot_self": {
+                "type": "bool",
+                "description": "忽略自己邀请",
+                "default": true,
+                "hint": "是否忽略机器人自己发起的邀请。"
+            }
+        }
+    }
+}
