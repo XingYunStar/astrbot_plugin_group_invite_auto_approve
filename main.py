@@ -12,7 +12,7 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import Aioc
     "astrbot_plugin_group_invite_auto_approve",
     "星陨",
     "根据群信息自动进群",
-    "1.0.5",
+    "1.0.8",
     "https://github.com/XingYunStar/astrbot_plugin_group_invite_auto_approve"
 )
 class GroupInvitePlugin(Star):
