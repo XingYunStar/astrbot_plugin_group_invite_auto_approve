@@ -17,14 +17,14 @@
     "group_welcome_message": {
         "type": "string",
         "description": "群欢迎消息",
-        "default": "我是机器人，欢迎使用。",
-        "hint": "进群后自动发送的欢迎消息。留空则不发送。"
+        "default": "我是机器人，\\n欢迎使用。",
+        "hint": "进群后自动发送的欢迎消息。留空则不发送。可使用\\n换行。"
     },
     "private_reply_message": {
         "type": "string",
         "description": "私聊回复",
         "default": "已同意进群~",
-        "hint": "同意进群邀请后，私聊回复邀请人的消息。留空则不发送。"
+        "hint": "同意进群邀请后，私聊回复邀请人的消息。留空则不发送。可使用\\n换行。"
     },
     "enable_log": {
         "type": "bool",
