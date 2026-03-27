@@ -10,26 +10,45 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import Aioc
     "astrbot_plugin_group_invite",
     "星陨",
     "根据群信息自动进群",
-    "1.0.4",
+    "1.0.5",
     "https://github.com/XingYunStar/astrbot_plugin_group_invite_auto_approve"
 )
 class GroupInvitePlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
+        # 配置会通过 __init__ 的 config 参数传入
         self.config = config or {}
-        logger.info(f"群邀请插件已加载，配置: {self._get_config_summary()}")
+        
+        # 调试：打印收到的配置内容
+        logger.info(f"收到原始配置: {self.config}")
+        
+        # 合并默认配置
+        default_config = self._get_default_config()
+        for key, default_value in default_config.items():
+            if key not in self.config:
+                self.config[key] = default_value
+                logger.info(f"使用默认配置: {key} = {default_value}")
+            else:
+                logger.info(f"使用用户配置: {key} = {self.config[key]}")
+        
+        logger.info(f"群邀请插件已加载，最终配置: {self._get_config_summary()}")
     
     def _get_config_summary(self) -> str:
+        """获取配置摘要"""
         keywords = self.config.get("keywords", [])
         auto_join = self.config.get("auto_join", True)
-        return f"关键词={keywords}, 自动进群={'是' if auto_join else '否'}"
+        check_memo = self.config.get("check_group_memo", True)
+        return f"关键词={keywords}, 自动进群={'是' if auto_join else '否'}, 检查群介绍={'是' if check_memo else '否'}"
     
     def get_config(self, key: str, default=None):
+        """获取配置值"""
+        # 直接从 self.config 获取
         if key in self.config:
             return self.config[key]
-        return self._get_default_config().get(key, default)
+        return default
     
     def _get_default_config(self) -> dict:
+        """获取默认配置"""
         return {
             "keywords": ["原神", "星穹铁道", "绝区零"],
             "auto_join": True,
@@ -49,6 +68,10 @@ class GroupInvitePlugin(Star):
         
         text_lower = text.lower()
         keywords = self.get_config("keywords", [])
+        
+        # 确保 keywords 是列表
+        if isinstance(keywords, str):
+            keywords = [k.strip() for k in keywords.split(",") if k.strip()]
         
         for keyword in keywords:
             if keyword and keyword.lower() in text_lower:
@@ -139,7 +162,6 @@ class GroupInvitePlugin(Star):
                     if self.get_config("check_group_memo", True):
                         logger.info(f"群介绍: {group_memo}")
                 
-                # ========== 关键修改：或关系判断 ==========
                 # 检查群名或群介绍是否包含关键词（任一即可）
                 if self.contains_keywords_in_group(group_name, group_memo):
                     # 同意进群邀请
@@ -180,7 +202,7 @@ class GroupInvitePlugin(Star):
                         if group_msg:
                             try:
                                 await self.send_message_with_retry(
-                                    lambda: client.api.call_action(
+                                    lambda: client.api_call_action(
                                         "send_group_msg",
                                         group_id=group_id,
                                         message=group_msg
@@ -192,7 +214,6 @@ class GroupInvitePlugin(Star):
                                 logger.error(f"发送群欢迎消息失败: {e}")
                 else:
                     if self.get_config("enable_log", True):
-                        # 输出不匹配的原因，便于调试
                         reason = []
                         if not self.contains_keywords(group_name):
                             reason.append("群名无关键词")
@@ -214,6 +235,12 @@ class GroupInvitePlugin(Star):
         private_msg = self.get_config("private_reply_message", "")
         check_memo = self.get_config("check_group_memo", True)
         delay = self.get_config("delay_after_join", 2)
+        retry = self.get_config("retry_on_failure", True)
+        ignore_self = self.get_config("ignore_bot_self", True)
+        
+        # 处理 keywords 可能是字符串的情况
+        if isinstance(keywords, str):
+            keywords = [k.strip() for k in keywords.split(",") if k.strip()]
         
         config_text = (
             "📋 群邀请插件当前配置:\n\n"
@@ -222,9 +249,11 @@ class GroupInvitePlugin(Star):
             f"📝 检查群介绍: {'✅ 开启' if check_memo else '❌ 关闭'}\n"
             f"💬 群欢迎消息: {welcome_msg if welcome_msg else '不发送'}\n"
             f"💬 私聊回复: {private_msg if private_msg else '不发送'}\n"
-            f"⏰ 进群延迟: {delay}秒\n\n"
-            "💡 提示: 请在插件管理页面修改配置\n"
-            "📌 匹配规则: 群名或群介绍包含任意关键词即自动进群"
+            f"⏰ 进群延迟: {delay}秒\n"
+            f"🔄 失败重试: {'✅ 开启' if retry else '❌ 关闭'}\n"
+            f"🙈 忽略自己邀请: {'✅ 开启' if ignore_self else '❌ 关闭'}\n\n"
+            "📌 匹配规则: 群名或群介绍包含任意关键词即自动进群\n"
+            "💡 提示: 请在插件管理页面修改配置"
         )
         yield event.plain_result(config_text)
     
