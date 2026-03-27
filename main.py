@@ -10,15 +10,14 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import Aioc
     "astrbot_plugin_group_invite_auto_approve",
     "星陨",
     "根据群信息自动进群",
-    "1.0.6",
+    "1.0.7",
     "https://github.com/XingYunStar/astrbot_plugin_group_invite_auto_approve"
 )
 class GroupInvitePlugin(Star):
     def __init__(self, context: Context, config: dict):
         super().__init__(context)
-        # config 直接就是配置字典，结构扁平
         self.config = config
-        logger.info(f"群邀请插件已加载，撤回时间: {self.config.get('recall_time', 'N/A')}")
+        logger.info(f"群邀请插件已加载")
         logger.info(f"配置详情: {self._get_config_summary()}")
     
     def _get_config_summary(self) -> str:
@@ -29,8 +28,15 @@ class GroupInvitePlugin(Star):
         return f"关键词={keywords}, 自动进群={'是' if auto_join else '否'}, 检查群介绍={'是' if check_memo else '否'}"
     
     def get_config(self, key: str, default=None):
-        """获取配置值"""
-        return self.config.get(key, default)
+        """获取配置值，对消息类配置自动转换换行符"""
+        value = self.config.get(key, default)
+        
+        # 对消息类配置进行换行符转换
+        if key in ["group_welcome_message", "private_reply_message"] and isinstance(value, str):
+            # 将字符串中的 \n 转换为实际换行符
+            value = value.replace("\\n", "\n")
+        
+        return value
     
     def contains_keywords(self, text: str) -> bool:
         """检查文本是否包含任何关键词"""
@@ -152,7 +158,8 @@ class GroupInvitePlugin(Star):
                                 )
                             )
                             if self.get_config("enable_log", True):
-                                logger.info(f"已发送私聊消息给邀请人 {inviter_id}")
+                                # 打印时显示换行效果
+                                logger.info(f"已发送私聊消息给邀请人 {inviter_id}: {private_msg.replace(chr(10), '\\n')}")
                         except Exception as e:
                             logger.error(f"发送私聊消息失败: {e}")
                     
@@ -174,7 +181,7 @@ class GroupInvitePlugin(Star):
                                     )
                                 )
                                 if self.get_config("enable_log", True):
-                                    logger.info(f"已在群{group_id}发送欢迎消息")
+                                    logger.info(f"已在群{group_id}发送欢迎消息: {group_msg.replace(chr(10), '\\n')}")
                             except Exception as e:
                                 logger.error(f"发送群欢迎消息失败: {e}")
                 else:
@@ -203,18 +210,22 @@ class GroupInvitePlugin(Star):
         retry = self.get_config("retry_on_failure", True)
         ignore_self = self.get_config("ignore_bot_self", True)
         
+        # 显示时把换行符转义显示
+        welcome_display = welcome_msg.replace("\n", "\\n") if welcome_msg else "不发送"
+        private_display = private_msg.replace("\n", "\\n") if private_msg else "不发送"
+        
         config_text = (
             "📋 群邀请插件当前配置:\n\n"
             f"🔑 关键词: {', '.join(keywords) if keywords else '无'}\n"
             f"🚪 自动进群: {'✅ 开启' if auto_join else '❌ 关闭'}\n"
             f"📝 检查群介绍: {'✅ 开启' if check_memo else '❌ 关闭'}\n"
-            f"💬 群欢迎消息: {welcome_msg if welcome_msg else '不发送'}\n"
-            f"💬 私聊回复: {private_msg if private_msg else '不发送'}\n"
+            f"💬 群欢迎消息: {welcome_display}\n"
+            f"💬 私聊回复: {private_display}\n"
             f"⏰ 进群延迟: {delay}秒\n"
             f"🔄 失败重试: {'✅ 开启' if retry else '❌ 关闭'}\n"
             f"🙈 忽略自己邀请: {'✅ 开启' if ignore_self else '❌ 关闭'}\n\n"
             "📌 匹配规则: 群名或群介绍包含任意关键词即自动进群\n"
-            "💡 提示: 请在插件管理页面修改配置"
+            "💡 提示: 使用 \\n 可以在消息中换行"
         )
         yield event.plain_result(config_text)
     
