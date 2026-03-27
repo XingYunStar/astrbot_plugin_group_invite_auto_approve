@@ -10,8 +10,8 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import Aioc
     "astrbot_plugin_group_invite",
     "星陨",
     "根据群信息自动进群",
-    "1.0.0",
-    "https://github.com/你的用户名/astrbot_plugin_group_invite"
+    "1.0.3",
+    "https://github.com/XingYunStar/astrbot_plugin_group_invite_auto_approve"
 )
 class GroupInvitePlugin(Star):
     def __init__(self, context: Context, config: dict = None):
@@ -66,10 +66,8 @@ class GroupInvitePlugin(Star):
     async def get_group_info(self, client, group_id: int) -> tuple:
         """获取群信息和群介绍"""
         try:
-            result = await client.api.call_action(
-                action="get_group_info",
-                params={"group_id": group_id}
-            )
+            # 使用 client 的内置方法获取群信息
+            result = await client.get_group_info(group_id=group_id)
             group_name = result.get("group_name", "")
             group_memo = result.get("group_memo", result.get("description", ""))
             return group_name, group_memo
@@ -111,11 +109,23 @@ class GroupInvitePlugin(Star):
             group_id = raw_message.get("group_id")
             inviter_id = raw_message.get("user_id")
             
+            # 确保 group_id 是整数类型
+            if isinstance(group_id, str):
+                group_id = int(group_id)
+            if isinstance(inviter_id, str):
+                inviter_id = int(inviter_id)
+            
             # 检查是否忽略自己邀请
-            if self.get_config("ignore_bot_self", True) and str(inviter_id) == str(client.uin):
-                if self.get_config("enable_log", True):
-                    logger.info(f"忽略自己发起的邀请: 群{group_id}")
-                return
+            if self.get_config("ignore_bot_self", True):
+                try:
+                    login_info = await client.get_login_info()
+                    self_uin = login_info.get("user_id")
+                    if inviter_id == self_uin:
+                        if self.get_config("enable_log", True):
+                            logger.info(f"忽略自己发起的邀请: 群{group_id}")
+                        return
+                except Exception:
+                    pass
             
             if self.get_config("enable_log", True):
                 logger.info(f"收到群邀请: 群ID={group_id}, 邀请人={inviter_id}")
@@ -136,14 +146,12 @@ class GroupInvitePlugin(Star):
                 
                 # 检查关键词
                 if self.contains_keywords(check_text):
-                    # 同意进群邀请
+                    # 同意进群邀请 - 使用正确的参数格式
                     await client.api.call_action(
-                        action="set_group_add_request",
-                        params={
-                            "flag": flag,
-                            "sub_type": "invite",
-                            "approve": True
-                        }
+                        "set_group_add_request",
+                        flag=flag,
+                        sub_type="invite",
+                        approve=True
                     )
                     
                     if self.get_config("enable_log", True):
@@ -155,11 +163,9 @@ class GroupInvitePlugin(Star):
                         try:
                             await self.send_message_with_retry(
                                 lambda: client.api.call_action(
-                                    action="send_private_msg",
-                                    params={
-                                        "user_id": inviter_id,
-                                        "message": private_msg
-                                    }
+                                    "send_private_msg",
+                                    user_id=inviter_id,
+                                    message=private_msg
                                 )
                             )
                             if self.get_config("enable_log", True):
@@ -179,11 +185,9 @@ class GroupInvitePlugin(Star):
                             try:
                                 await self.send_message_with_retry(
                                     lambda: client.api.call_action(
-                                        action="send_group_msg",
-                                        params={
-                                            "group_id": group_id,
-                                            "message": group_msg
-                                        }
+                                        "send_group_msg",
+                                        group_id=group_id,
+                                        message=group_msg
                                     )
                                 )
                                 if self.get_config("enable_log", True):
