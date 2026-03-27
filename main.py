@@ -10,32 +10,26 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import Aioc
     "astrbot_plugin_group_invite",
     "星陨",
     "根据群信息自动进群",
-    "1.0.3",
+    "1.0.4",
     "https://github.com/XingYunStar/astrbot_plugin_group_invite_auto_approve"
 )
 class GroupInvitePlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
-        # 配置会通过 __init__ 的 config 参数传入
         self.config = config or {}
         logger.info(f"群邀请插件已加载，配置: {self._get_config_summary()}")
     
     def _get_config_summary(self) -> str:
-        """获取配置摘要"""
         keywords = self.config.get("keywords", [])
         auto_join = self.config.get("auto_join", True)
         return f"关键词={keywords}, 自动进群={'是' if auto_join else '否'}"
     
     def get_config(self, key: str, default=None):
-        """获取配置值"""
-        # 优先从配置中获取
         if key in self.config:
             return self.config[key]
-        # 否则使用默认值
         return self._get_default_config().get(key, default)
     
     def _get_default_config(self) -> dict:
-        """获取默认配置"""
         return {
             "keywords": ["原神", "星穹铁道", "绝区零"],
             "auto_join": True,
@@ -63,10 +57,19 @@ class GroupInvitePlugin(Star):
                 return True
         return False
     
+    def contains_keywords_in_group(self, group_name: str, group_memo: str) -> bool:
+        """检查群名或群介绍是否包含关键词（或关系）"""
+        # 检查群名
+        if self.contains_keywords(group_name):
+            return True
+        # 如果启用了群介绍检查，再检查群介绍
+        if self.get_config("check_group_memo", True) and self.contains_keywords(group_memo):
+            return True
+        return False
+    
     async def get_group_info(self, client, group_id: int) -> tuple:
         """获取群信息和群介绍"""
         try:
-            # 使用 client 的内置方法获取群信息
             result = await client.get_group_info(group_id=group_id)
             group_name = result.get("group_name", "")
             group_memo = result.get("group_memo", result.get("description", ""))
@@ -92,7 +95,6 @@ class GroupInvitePlugin(Star):
         """监听所有 AIOCQHTTP 平台的事件"""
         raw_message = getattr(event.message_obj, 'raw_message', None)
         
-        # 只处理请求类型的事件
         if not isinstance(raw_message, dict) or raw_message.get("post_type") != "request":
             return
         
@@ -104,12 +106,11 @@ class GroupInvitePlugin(Star):
         request_type = raw_message.get("request_type")
         sub_type = raw_message.get("sub_type")
         
-        # 处理群邀请
         if request_type == "group" and sub_type == "invite":
             group_id = raw_message.get("group_id")
             inviter_id = raw_message.get("user_id")
             
-            # 确保 group_id 是整数类型
+            # 确保是整数类型
             if isinstance(group_id, str):
                 group_id = int(group_id)
             if isinstance(inviter_id, str):
@@ -131,7 +132,6 @@ class GroupInvitePlugin(Star):
                 logger.info(f"收到群邀请: 群ID={group_id}, 邀请人={inviter_id}")
             
             try:
-                # 获取群信息
                 group_name, group_memo = await self.get_group_info(client, group_id)
                 
                 if self.get_config("enable_log", True):
@@ -139,14 +139,10 @@ class GroupInvitePlugin(Star):
                     if self.get_config("check_group_memo", True):
                         logger.info(f"群介绍: {group_memo}")
                 
-                # 构建检查文本
-                check_text = group_name
-                if self.get_config("check_group_memo", True):
-                    check_text = f"{group_name} {group_memo}"
-                
-                # 检查关键词
-                if self.contains_keywords(check_text):
-                    # 同意进群邀请 - 使用正确的参数格式
+                # ========== 关键修改：或关系判断 ==========
+                # 检查群名或群介绍是否包含关键词（任一即可）
+                if self.contains_keywords_in_group(group_name, group_memo):
+                    # 同意进群邀请
                     await client.api.call_action(
                         "set_group_add_request",
                         flag=flag,
@@ -196,7 +192,13 @@ class GroupInvitePlugin(Star):
                                 logger.error(f"发送群欢迎消息失败: {e}")
                 else:
                     if self.get_config("enable_log", True):
-                        logger.info(f"群邀请不符合关键词条件，不处理: {group_name}")
+                        # 输出不匹配的原因，便于调试
+                        reason = []
+                        if not self.contains_keywords(group_name):
+                            reason.append("群名无关键词")
+                        if self.get_config("check_group_memo", True) and not self.contains_keywords(group_memo):
+                            reason.append("群介绍无关键词")
+                        logger.info(f"群邀请不符合关键词条件，不处理: {group_name} ({', '.join(reason)})")
                         
             except Exception as e:
                 logger.error(f"处理群邀请时发生错误: {e}")
@@ -221,10 +223,10 @@ class GroupInvitePlugin(Star):
             f"💬 群欢迎消息: {welcome_msg if welcome_msg else '不发送'}\n"
             f"💬 私聊回复: {private_msg if private_msg else '不发送'}\n"
             f"⏰ 进群延迟: {delay}秒\n\n"
-            "💡 提示: 请在插件管理页面修改配置"
+            "💡 提示: 请在插件管理页面修改配置\n"
+            "📌 匹配规则: 群名或群介绍包含任意关键词即自动进群"
         )
         yield event.plain_result(config_text)
     
     async def terminate(self):
-        """插件卸载时的清理工作"""
         logger.info("群邀请插件已卸载")
