@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>群邀请自动处理</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="/api/plugin/page/bridge-sdk.js"></script>
+  </head>
+  <body>
+    <div class="page">
+      <div class="hero">
+        <div>
+          <h1>群邀请自动处理</h1>
+          <div class="sub" id="heroSub">正在加载配置…</div>
+        </div>
+        <div class="tabs">
+          <button class="tab active" data-tab="config">配置</button>
+          <button class="tab" data-tab="records">邀请记录</button>
+          <button class="tab" data-tab="tools">调试工具</button>
+        </div>
+      </div>
+
+      <!-- ================= 配置 ================= -->
+      <section data-panel="config">
+        <div class="banner info" id="policyBanner">
+          <div class="icon">ℹ️</div>
+          <div>
+            <div class="title" id="policyTitle">正在读取当前策略…</div>
+            <div class="text" id="policyText"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>总开关</h2>
+            <div class="desc">优先级最高</div>
+          </div>
+          <div class="card-body">
+            <div class="field">
+              <label class="field-label">
+                <span class="switch switch-large">
+                  <input type="checkbox" data-path="auto_approve_all" data-type="bool" />
+                  <span class="track"></span>
+                </span>
+                <span>自动同意所有群邀请</span>
+              </label>
+              <div class="hint">
+                开启后，收到任何群邀请都会直接同意，<strong>不再判断下方「满足以下要求时」的任何条件</strong>。
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>满足以下要求时自动同意</h2>
+            <div class="desc">多个开关同时开启时判断关系为 AND</div>
+          </div>
+          <div class="card-body">
+            <div class="field" data-enabled-by="conditions.keyword_enable">
+              <label class="field-label">
+                <span class="switch">
+                  <input
+                    type="checkbox"
+                    data-path="conditions.keyword_enable"
+                    data-type="bool"
+                  />
+                  <span class="track"></span>
+                </span>
+                <span>关键词</span>
+              </label>
+              <div class="hint">
+                群名称、群介绍（群简介）、群公告任意一处包含下方任一关键词即视为满足。
+              </div>
+
+              <div id="keywordEditor" style="margin-top: 10px">
+                <div class="chips" id="keywordChips"></div>
+                <div class="row">
+                  <input
+                    type="text"
+                    id="keywordInput"
+                    placeholder="输入关键词后按回车添加，例如：原神"
+                    style="flex: 1; min-width: 180px"
+                  />
+                  <button class="btn btn-sm" id="addKeywordBtn" type="button">
+                    添加
+                  </button>
+                  <button class="btn btn-sm btn-ghost" id="resetKeywordBtn" type="button">
+                    恢复默认
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="field" data-enabled-by="conditions.member_count_enable">
+              <label class="field-label">
+                <span class="switch">
+                  <input
+                    type="checkbox"
+                    data-path="conditions.member_count_enable"
+                    data-type="bool"
+                  />
+                  <span class="track"></span>
+                </span>
+                <span>人数</span>
+              </label>
+              <div class="hint">
+                需要<strong>同时</strong>满足「群人数大于下限」且「群人数少于上限」。
+                取不到群人数时该条件视为不满足。
+              </div>
+              <div class="grid-2" style="margin-top: 10px">
+                <div>
+                  <div class="field-label" style="font-size: 13px">群人数下限</div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    data-path="conditions.min_member_count"
+                    data-type="int"
+                  />
+                  <div class="hint">群人数必须<strong>大于</strong>该值（默认 0）。</div>
+                </div>
+                <div>
+                  <div class="field-label" style="font-size: 13px">群人数上限</div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    data-path="conditions.max_member_count"
+                    data-type="int"
+                  />
+                  <div class="hint">群人数必须<strong>少于</strong>该值（默认 3000）。</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label" style="font-size: 13px">
+                群名 / 人数拿不到时怎么办
+              </div>
+              <div class="hint" style="margin: 0 0 8px">
+                机器人<strong>没进过这个群</strong>时，QQ 不提供群名称、群介绍、群人数
+                （<code>get_group_info</code> 返回全空的「空壳」，这是 QQ 侧限制）。
+                所以必须决定：<strong>要不要先放它进去看一眼</strong>。
+              </div>
+              <select
+                id="infoPolicySelect"
+                data-path="conditions.when_info_unavailable"
+                data-type="str"
+              >
+                <option value="approve">
+                  进群试用：先进群，再按关键词/人数判断，不合格自动退出
+                </option>
+                <option value="skip">不进群，也不回复邀请人</option>
+              </select>
+
+              <div class="hint" style="margin-top: 6px">
+                选「不进群」时，邀请保持待处理（不自动同意、也不自动拒绝，等你人工决定），
+                且<strong>不会回复邀请人</strong>。
+                <br />
+                本项只管「读不到资料」这一种情况。如果读到了群名、只是关键词或人数不匹配，
+                那是另一种情况，是否回复由下方「未满足条件时对邀请人发送消息」单独控制。
+              </div>
+
+              <div class="banner info" id="infoPolicyPreview" style="margin-top: 10px">
+                <div class="icon">🔎</div>
+                <div>
+                  <div class="title" id="infoPolicyPreviewTitle">实际会发生什么</div>
+                  <div class="text" id="infoPolicyPreviewText"></div>
+                </div>
+              </div>
+
+              <div class="banner warn hidden" id="infoPolicyNotAutoApprove" style="margin-top: 10px">
+                <div class="icon">⚠️</div>
+                <div>
+                  <div class="title">选「进群试用」不等于「自动同意所有群邀请」</div>
+                  <div class="text">
+                    两者完全不同。本项只针对<strong>群名/人数确实拿不到</strong>的那一部分邀请，
+                    而且进去之后仍会<strong>按关键词与人数逐条复核</strong>，不合格会自动退出。
+                    「自动同意所有群邀请」则是无条件同意、且<strong>永不退出</strong>。
+                  </div>
+                </div>
+              </div>
+
+              <div class="banner warn hidden" id="infoPolicyConflict" style="margin-top: 10px">
+                <div class="icon">🔒</div>
+                <div>
+                  <div class="title">该项已被「入群后重新校验」接管</div>
+                  <div class="text">
+                    「不进群」的两个选项都意味着机器人拿不到群名与人数，
+                    而拿不到资料，<strong>入群后复核就永远不会触发</strong>。
+                    所以复核开启期间这里固定使用「进群试用」。
+                    想恢复保守行为，把「入群后重新校验」关掉即可。
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="field" data-enabled-by="conditions.verify_after_join">
+              <label class="field-label">
+                <span class="switch">
+                  <input
+                    type="checkbox"
+                    data-path="conditions.verify_after_join"
+                    data-type="bool"
+                  />
+                  <span class="track"></span>
+                </span>
+                <span>入群后重新校验，不满足条件则自动退群</span>
+              </label>
+              <div class="hint">
+                <strong>推荐保持开启</strong>：机器人不在群里就拿不到群名和人数，
+                那就先同意进群，再用真实资料重新判断关键词与人数，不满足就退出
+                —— 这是让关键词 / 人数规则对「没进过的群」也生效的唯一办法。
+                开启期间「群资料获取不到时」会被强制为「先同意进群」。
+                只对本插件同意进群的情况生效，管理员手动拉群不受影响。
+              </div>
+              <div style="margin-top: 10px">
+                <div class="field-label" style="font-size: 13px">
+                  入群后等待多少秒再校验
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  max="60"
+                  step="1"
+                  data-path="conditions.verify_after_join_delay"
+                  data-type="int"
+                />
+                <div class="hint">
+                  给协议端一点时间同步群资料，避免刚进群时读到旧数据（默认 3 秒）。
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label" style="font-size: 13px">
+                可被 QQ 强行拉人的群人数上限
+              </div>
+              <input
+                type="number"
+                min="0"
+                max="200"
+                step="5"
+                data-path="conditions.force_join_max_members"
+                data-type="int"
+              />
+              <div class="hint">
+                QQ 对<strong>少于 50 人</strong>的群不需要机器人同意就会直接拉进去。
+                收到「重复邀请」（机器人已在群里）时，如果该群人数小于此值，
+                说明它属于这类群，插件会按上面的条件<strong>重新复核，不合格就退群</strong>。
+                设为 <code>0</code> 关闭该行为。
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label" style="font-size: 13px">
+                豁免名单（这些人的拉群不触发自动退群）
+              </div>
+              <div class="chips" id="exemptChips"></div>
+              <div class="row">
+                <input
+                  type="text"
+                  id="exemptInput"
+                  placeholder="输入 QQ 号后按回车添加"
+                  style="flex: 1; min-width: 180px"
+                />
+                <button class="btn btn-sm" id="addExemptBtn" type="button">添加</button>
+              </div>
+              <div class="hint">
+                <strong>QQ 对少于 50 人的群不需要机器人同意就会直接拉进去</strong>，
+                这类「不请自来」的入群同样会参与复核。把你自己（或其它信任的人）的 QQ 号
+                填在这里，他们拉群时就不会被退。
+                AstrBot 配置里填了<strong>数字</strong>管理员账号的话会自动豁免。
+              </div>
+            </div>
+
+            <div class="banner warn" id="allOffBanner" style="margin: 14px 0 0">
+              <div class="icon">⚠️</div>
+              <div>
+                <div class="title">当前不处理群邀请</div>
+                <div class="text">
+                  以上条件开关<strong>全部关闭</strong>时，插件既不会自动同意，也不会自动拒绝任何群邀请。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>对邀请人的私聊消息</h2>
+            <div class="desc">发送给拉机器人进群的人</div>
+          </div>
+          <div class="card-body">
+            <div class="field" data-enabled-by="notify.approve_enable">
+              <label class="field-label">
+                <span class="switch">
+                  <input type="checkbox" data-path="notify.approve_enable" data-type="bool" />
+                  <span class="track"></span>
+                </span>
+                <span>同意进群后对邀请人发送消息</span>
+              </label>
+              <textarea
+                data-path="notify.approve_message"
+                data-type="str"
+                rows="2"
+                style="margin-top: 8px"
+              ></textarea>
+            </div>
+
+            <div class="field" data-enabled-by="notify.unmet_enable">
+              <label class="field-label">
+                <span class="switch">
+                  <input type="checkbox" data-path="notify.unmet_enable" data-type="bool" />
+                  <span class="track"></span>
+                </span>
+                <span>未满足配置的开关条件时对邀请人发送消息</span>
+              </label>
+              <textarea
+                data-path="notify.unmet_message"
+                data-type="str"
+                rows="3"
+                style="margin-top: 8px"
+              ></textarea>
+              <div class="hint">
+                <code>{reasons}</code> 会被替换成自动生成的未满足条件列表；不写该占位符时会自动追加到末尾。
+              </div>
+              <div class="field-label" style="font-size: 13px; margin-top: 10px">
+                自定义额外消息
+              </div>
+              <textarea
+                data-path="notify.unmet_extra"
+                data-type="str"
+                rows="2"
+                placeholder="留空则不追加"
+              ></textarea>
+            </div>
+
+            <div class="field">
+              <label class="field-label">
+                <span class="switch">
+                  <input
+                    type="checkbox"
+                    data-path="notify.unmet_auto_reject"
+                    data-type="bool"
+                  />
+                  <span class="track"></span>
+                </span>
+                <span>未满足条件时自动拒绝群邀请</span>
+              </label>
+              <div class="hint">
+                默认关闭：未满足条件时保持邀请待处理、不做任何操作。开启后才会主动拒绝。
+              </div>
+            </div>
+
+            <div class="hint" style="margin-top: 12px">
+              可用占位符：<code>{group_name}</code> <code>{group_id}</code>
+              <code>{member_count}</code> <code>{max_member_count}</code>
+              <code>{inviter}</code> <code>{keywords}</code> <code>{reasons}</code>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>同意进群后在群内发送</h2>
+            <div class="desc">进入群聊后发送</div>
+          </div>
+          <div class="card-body">
+            <div class="field" data-enabled-by="welcome.enable">
+              <label class="field-label">
+                <span class="switch">
+                  <input type="checkbox" data-path="welcome.enable" data-type="bool" />
+                  <span class="track"></span>
+                </span>
+                <span>当同意进群后发送消息</span>
+              </label>
+              <textarea
+                data-path="welcome.message"
+                data-type="str"
+                rows="2"
+                style="margin-top: 8px"
+              ></textarea>
+            </div>
+
+            <div class="field">
+              <div class="field-label" style="font-size: 13px">
+                当同意进群后同时发送图片
+              </div>
+              <input
+                type="text"
+                data-path="welcome.image"
+                data-type="str"
+                placeholder="留空则不发送图片"
+              />
+              <div class="hint">
+                支持本地文件绝对路径（如
+                <code>/AstrBot/data/plugins/xxx/welcome.png</code>）或图片 URL（http/https）。
+              </div>
+              <img class="preview hidden" id="imagePreview" alt="图片预览" />
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>高级设置</h2>
+          </div>
+          <div class="card-body">
+            <div class="field">
+              <label class="field-label">
+                <span class="switch">
+                  <input
+                    type="checkbox"
+                    data-path="advanced.log_group_detail"
+                    data-type="bool"
+                  />
+                  <span class="track"></span>
+                </span>
+                <span>收到群邀请时在日志打印此群所有信息</span>
+              </label>
+              <div class="hint">
+                开启后，每收到一个群邀请都会在 AstrBot 日志中完整打印群号、群名、群介绍、群公告、人数、建群时间、等级等全部可用信息。
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field-label">
+                <span class="switch">
+                  <input
+                    type="checkbox"
+                    data-path="advanced.fetch_notice"
+                    data-type="bool"
+                  />
+                  <span class="track"></span>
+                </span>
+                <span>尝试获取群公告参与关键词匹配</span>
+              </label>
+              <div class="hint">
+                群公告需要机器人已在群内才能读取。尚未入群时通常取不到，此时仅用群名称与群介绍匹配。
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label" style="font-size: 13px">保留邀请记录条数</div>
+              <input
+                type="number"
+                min="10"
+                max="500"
+                step="10"
+                data-path="advanced.history_limit"
+                data-type="int"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= 记录 ================= -->
+      <section data-panel="records" class="hidden">
+        <div class="card">
+          <div class="card-head">
+            <h2>统计</h2>
+            <div class="desc">
+              <button class="btn btn-sm btn-ghost" id="refreshRecordsBtn" type="button">
+                刷新
+              </button>
+              <button class="btn btn-sm btn-danger" id="clearRecordsBtn" type="button">
+                清空记录
+              </button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="stats" id="statsBox"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>邀请记录</h2>
+            <div class="desc">按时间倒序，展示该群全部已获取信息</div>
+          </div>
+          <div class="card-body" id="recordsBox">
+            <div class="empty">暂无记录</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= 工具 ================= -->
+      <section data-panel="tools" class="hidden">
+        <div class="card">
+          <div class="card-head">
+            <h2>群号体检</h2>
+            <div class="desc">实时查询该群的完整信息并试算规则</div>
+          </div>
+          <div class="card-body">
+            <div class="row">
+              <input
+                type="text"
+                id="scanGroupInput"
+                placeholder="输入群号，例如 123456789"
+                style="flex: 1; min-width: 180px"
+              />
+              <label class="row" style="font-size: 12px; color: var(--text-dim)">
+                <input type="checkbox" id="scanFetchNotice" checked />
+                读取群公告
+              </label>
+              <label class="row" style="font-size: 12px; color: var(--text-dim)">
+                <input type="checkbox" id="scanFetchRoster" checked />
+                读取成员名单
+              </label>
+              <button class="btn btn-primary" id="scanBtn" type="button">查询</button>
+            </div>
+            <div class="hint" id="scanHint">
+              查询使用当前已连接的 aiocqhttp 平台，不会产生任何同意/拒绝操作。
+            </div>
+            <div id="scanResult" style="margin-top: 12px"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>规则试算</h2>
+            <div class="desc">手动构造群信息，离线验证关键词与人数条件</div>
+          </div>
+          <div class="card-body">
+            <div class="grid-2">
+              <div>
+                <div class="field-label" style="font-size: 13px">群号（可选）</div>
+                <input type="text" id="simGroupId" placeholder="123456789" />
+              </div>
+              <div>
+                <div class="field-label" style="font-size: 13px">群名称</div>
+                <input type="text" id="simName" placeholder="例如：原神交流群" />
+              </div>
+              <div>
+                <div class="field-label" style="font-size: 13px">群人数</div>
+                <input type="number" id="simMemberCount" placeholder="500" />
+              </div>
+              <div>
+                <div class="field-label" style="font-size: 13px">群人数上限</div>
+                <input type="number" id="simMaxMemberCount" placeholder="3000" />
+              </div>
+            </div>
+            <div style="margin-top: 12px">
+              <div class="field-label" style="font-size: 13px">群介绍</div>
+              <textarea id="simMemo" rows="2" placeholder="群简介内容"></textarea>
+            </div>
+            <div style="margin-top: 12px">
+              <div class="field-label" style="font-size: 13px">群公告（每行一条）</div>
+              <textarea id="simNotices" rows="2" placeholder="公告内容"></textarea>
+            </div>
+            <div class="row" style="margin-top: 12px">
+              <button class="btn btn-primary" id="simulateBtn" type="button">试算</button>
+            </div>
+            <div id="simulateResult" style="margin-top: 12px"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>运行环境</h2>
+          </div>
+          <div class="card-body" id="envBox">
+            <div class="empty">加载中…</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="actionbar" id="actionbar">
+      <span class="dirty-dot hidden" id="dirtyDot">● 有未保存的修改</span>
+      <button class="btn" id="reloadBtn" type="button">放弃修改</button>
+      <button class="btn btn-primary" id="saveBtn" type="button">保存配置</button>
+    </div>
+
+    <div class="toasts" id="toasts"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

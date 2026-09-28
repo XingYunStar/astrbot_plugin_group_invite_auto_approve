@@ -1,0 +1,11 @@
+{
+  "metadata": {
+    "display_name": "Group Invite Auto Approve"
+  },
+  "pages": {
+    "invite": {
+      "title": "Group Invites",
+      "description": "Configure automatic group-invite approval rules and review invite history and group details."
+    }
+  }
+}

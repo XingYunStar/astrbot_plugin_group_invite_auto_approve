@@ -1,8 +1,10 @@
 name: astrbot_plugin_group_invite_auto_approve
-display_name: 根据群信息自动进群
-desc: AstrBot 自动同意加群插件 - 根据群名称或群简介关键词自动同意加群邀请，并发送私聊消息和进群消息
-version: v1.0.8
-support_platforms: 
-  - aiocqhttp
+display_name: 群邀请自动处理
+desc: "[仅aiocqhttp]自动处理群邀请：收到邀请时在日志打印群聊全部信息；按关键词（群名/群介绍/群公告）与群人数条件自动同意；支持入群后复核（不合格自动退群）、通知邀请人、入群欢迎消息与欢迎图片；自带 WebUI 管理页。"
+help: 略
+version: v2.0.0
 author: 星陨
 repo: https://github.com/XingYunStar/astrbot_plugin_group_invite_auto_approve
+support_platforms:
+  - aiocqhttp
+astrbot_version: ">=4.24.2"

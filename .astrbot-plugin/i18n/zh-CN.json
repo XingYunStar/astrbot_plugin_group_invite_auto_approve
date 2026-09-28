@@ -1,0 +1,11 @@
+{
+  "metadata": {
+    "display_name": "群邀请自动处理"
+  },
+  "pages": {
+    "invite": {
+      "title": "群邀请管理",
+      "description": "可视化配置群邀请自动同意规则，并查看历史邀请记录与群聊信息。"
+    }
+  }
+}
