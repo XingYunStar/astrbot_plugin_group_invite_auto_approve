@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -39,7 +40,11 @@ print("   ", metadata)
 check("metadata 非空", metadata is not None)
 check("name", metadata.name, PLUGIN_NAME)
 check("display_name", metadata.display_name, "群邀请自动处理")
-check("version", metadata.version, "v1.0.0")
+check(
+    "version 形如 vX.Y.Z",
+    bool(re.fullmatch(r"v\d+\.\d+\.\d+", metadata.version or "")),
+    True,
+)
 check("support_platforms", metadata.support_platforms, ["aiocqhttp"])
 check("astrbot_version", metadata.astrbot_version, ">=4.24.2")
 check("desc 非空", bool(metadata.desc))

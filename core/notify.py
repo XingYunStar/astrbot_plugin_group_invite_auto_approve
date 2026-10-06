@@ -47,7 +47,10 @@ def build_variables(
         "group_name": (info.name if info else "") or "未知群名",
         "group_id": info.group_id if info else "",
         "group_remark": (info.remark if info else "") or "",
-        "group_memo": (info.memo if info else "") or "",
+        # 群介绍：优先用协议端返回的真群简介（SnowLuma >= 1.14.21 的
+        # group_description），拿不到时退回 group_memo 原值 —— 与
+        # GroupInfo.intro 及日志里的「群介绍」保持同一口径。
+        "group_memo": (info.intro if info else "") or "",
         "member_count": (info.member_count if info else 0),
         "max_member_count": (info.max_member_count if info else 0),
         "create_time": (info.created_at_text() if info else ""),

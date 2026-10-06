@@ -4,11 +4,13 @@
 本模块按「能拿到多少拿多少」的策略工作：每个字段独立 try/except，
 任何一个接口失败都不会影响其它字段，失败原因记录在 ``errors`` 里供排查。
 
-已在本机 SnowLuma 1.14.20 (OneBot v11) 上实测通过的接口：
+已在 OneBot v11 协议端（SnowLuma / NapCat）上实测通过的接口：
 
 * ``get_group_info``      -> group_name / group_remark / member_count /
                              max_member_count / group_create_time /
-                             group_level / group_memo / group_all_shut
+                             group_level / group_memo / group_description /
+                             group_all_shut
+* ``get_group_detail_info`` -> 群简介补全（NapCat 的 ``get_group_info`` 不返回群简介）
 * ``_get_group_notice``   -> 群公告列表（需要机器人已在群内）
 * ``get_group_member_list`` -> 群主 / 管理员（需要机器人已在群内）
 * ``get_group_at_all_remain`` / ``get_group_honor_info`` 等附加信息
@@ -39,19 +41,26 @@ class GroupInfo:
     name: str = ""
     remark: str = ""
     memo: str = ""
-    """协议端的 ``group_memo`` 字段。
+    """协议端的 ``group_memo`` 字段（只有 SnowLuma <= 1.14.20 会返回）。
 
-    SnowLuma 原始实现把它填成 ``announcement || description``（公告优先），
-    因此有公告的群里这里拿到的是**公告的截断预览**；打了本地补丁后会额外返回
-    ``group_description``，那时才拿得到真正的群简介（见 :attr:`description`）。
+    SnowLuma 把它填成 ``announcement || description``（公告优先），因此有公告的
+    群里这里拿到的是**公告的截断预览**；真正的群简介见 :attr:`description`。
+    NapCat 不返回该字段，此处恒为空。
     """
 
     description: str = ""
-    """真正的群简介（协议端的 ``group_description``）。
+    """真正的群简介。
 
-    只有**打过本地补丁**的 SnowLuma 才会返回这个字段（参见 ``tools/`` 下的补丁脚本）。
-    未打补丁时为 ``""``，此时只能退回 :attr:`memo`。
+    跨协议端取第一个可用的字段：
+
+    * SnowLuma **>= 1.14.21**：``group_description``
+    * NapCat：``fingerMemo``（``richFingerMemo`` 为富文本版本，作兜底）
+
+    都拿不到时为 ``""``，此时只能退回 :attr:`memo`。
     """
+
+    description_source: str = ""
+    """``description`` 是从哪个协议端字段取到的（用于日志与排查）。"""
 
     member_count: int = 0
     max_member_count: int = 0
@@ -91,8 +100,10 @@ class GroupInfo:
     def intro_is_announcement(self) -> bool:
         """可用的「群介绍」是否其实来自公告。
 
-        只有「协议端没返回 ``group_description``」且「``group_memo`` 能在公告里找到」
-        时才成立 —— 那说明协议端把公告映射到了 memo、且真群简介没暴露出来。
+        只有「协议端没返回真正的群简介」且「``group_memo`` 能在公告里找到」
+        时才成立 —— 那说明协议端把公告映射到了 memo、且真群简介没暴露出来
+        （SnowLuma <= 1.14.20 的行为）。NapCat 的 ``fingerMemo`` 本身就是群简介，
+        不会走到这条判断。
         """
         return not self.description and self.memo_notice_index() >= 0
 
@@ -187,6 +198,7 @@ class GroupInfo:
             "remark": self.remark,
             "memo": self.memo,
             "description": self.description,
+            "description_source": self.description_source,
             "intro": self.intro,
             "intro_is_announcement": self.intro_is_announcement,
             "member_count": self.member_count,
@@ -221,16 +233,17 @@ class GroupInfo:
         memo_lines = [f"群介绍      : {self._block(self.intro)}"]
         if self.description:
             memo_lines.append(
-                "              └─ ✅ 来自真正的群简介字段（协议端 group_description）"
+                f"              └─ ✅ 来自真正的群简介字段"
+                f"（协议端 {self.description_source or 'group_description'}）"
             )
         elif self.memo:
             preview_index = self.memo_notice_index()
             if preview_index >= 0:
                 memo_lines.append(
                     f"              └─ ⚠ 该项其实是群公告第 {preview_index + 1} 条的截断预览："
-                    f"协议端把「公告」映射到了 group_memo（SnowLuma: "
+                    f"协议端把「公告」映射到了 group_memo（SnowLuma <= 1.14.20: "
                     f"announcement || description），真群简介未暴露 —— "
-                    f"可给本地 SnowLuma 打补丁取得（见 README）"
+                    f"升级到 SnowLuma >= 1.14.21 即可返回真正的群简介"
                 )
             else:
                 memo_lines.append("              └─ ✅ 该群无公告，这里就是真正的群简介")
@@ -340,20 +353,16 @@ async def fetch_group_info(
             "get_group_info 调用失败（协议端不支持，或该群号不存在 / 群信息不可见）"
         )
     elif isinstance(payload.data, dict):
-        data = payload.data
-        info.name = _text(data.get("group_name"))
-        info.remark = _text(data.get("group_remark"))
-        info.memo = _text(data.get("group_memo"))
-        info.description = _text(data.get("group_description"))
-        info.member_count = _int(data.get("member_count"))
-        info.max_member_count = _int(data.get("max_member_count"))
-        info.create_time = _int(data.get("group_create_time"))
-        info.level = _int(data.get("group_level"))
-        info.all_shut = _int(data.get("group_all_shut")) != 0
+        _apply_group_payload(info, payload.data)
         if not api.startswith("get_group_info"):
             info.errors.append(f"使用的是兼容接口 {api}")
     else:
         info.errors.append(f"{api} 返回了非预期的数据结构: {type(payload.data).__name__}")
+
+    # 群简介补全：NapCat 在「机器人已在群里」时 get_group_info 不含群简介字段，
+    # 只有再问一次群详情接口才拿得到（SnowLuma 上这一步不会产生额外开销）。
+    if not info.intro:
+        await _fill_description(client, info, no_cache=no_cache)
 
     if not info.found:
         # 这是 SnowLuma / NapCat 这一类 NTQQ 协议端的既有行为：
@@ -585,6 +594,84 @@ def _text(value: Any) -> str:
     if isinstance(value, str):
         return value.strip()
     return str(value).strip()
+
+
+def _first_text(data: dict[str, Any], *keys: str) -> tuple[str, str]:
+    """按顺序取第一个非空的文本字段，返回 ``(值, 命中的键名)``。"""
+    for key in keys:
+        value = _text(data.get(key))
+        if value:
+            return value, key
+    return "", ""
+
+
+def _apply_group_payload(
+    info: GroupInfo,
+    data: dict[str, Any],
+    *,
+    only_missing: bool = False,
+) -> None:
+    """把协议端返回的群信息映射进 ``GroupInfo``。
+
+    不同协议端的字段名并不统一，这里统一做兼容：
+
+    * ``group_name`` / ``group_remark`` / ``member_count`` / ``max_member_count``
+      / ``group_all_shut``：OneBot v11 标准字段，SnowLuma 与 NapCat 一致；
+    * **群简介**：SnowLuma >= 1.14.21 用 ``group_description``，
+      NapCat 用 ``fingerMemo``（``richFingerMemo`` 是富文本版本）；
+    * ``group_memo``：SnowLuma <= 1.14.20 的旧字段
+      （``announcement || description``，公告优先），NapCat 不返回；
+    * ``group_create_time`` / ``group_level``：目前只有 SnowLuma 返回，
+      NapCat 两者都没有，只能保持 0 / 未知。
+
+    Args:
+        only_missing: 为 ``True`` 时只填补空白字段，不覆盖已有数据
+            （用于「主接口已返回、只是缺群简介」时的补问）。
+    """
+    description, description_source = _first_text(
+        data, "group_description", "fingerMemo", "richFingerMemo"
+    )
+    values: dict[str, Any] = {
+        "name": _text(data.get("group_name")),
+        "remark": _text(data.get("group_remark")),
+        "memo": _text(data.get("group_memo")),
+        "description": description,
+        "description_source": description_source,
+        "member_count": _int(data.get("member_count")),
+        "max_member_count": _int(data.get("max_member_count")),
+        "create_time": _int(data.get("group_create_time")),
+        "level": _int(data.get("group_level")),
+    }
+    for field_name, value in values.items():
+        if not value:
+            continue
+        if only_missing and getattr(info, field_name):
+            continue
+        setattr(info, field_name, value)
+
+    # 全员禁言是布尔值，False 也是有效数据，因此单独处理；
+    # 用「或」合并，补问的结果只可能把状态补全，不会把已确认的禁言状态抹掉。
+    info.all_shut = info.all_shut or _int(data.get("group_all_shut")) != 0
+
+
+async def _fill_description(client: Any, info: GroupInfo, *, no_cache: bool) -> None:
+    """群简介缺失时，补问一次群详情接口。
+
+    部分协议端（实测 NapCat v4.18.19）的 ``get_group_info`` 在「机器人已在该群」
+    时会直接从内存花名册构造结果，只返回 6 个基础字段、**不含任何群简介**；
+    只有群详情接口才会真正去查 QQ 详情数据。SnowLuma 上该接口是
+    ``get_group_info`` 的同义接口（返回同一份 schema），所以补问不会更差。
+    """
+    result = await call_action(
+        client,
+        "get_group_detail_info",
+        group_id=info.group_id,
+        no_cache=no_cache,
+    )
+    if result.ok and isinstance(result.data, dict):
+        _apply_group_payload(info, result.data, only_missing=True)
+    elif not result.unsupported and result.error:
+        logger.debug(f"[group_invite] get_group_detail_info 补问群简介失败: {result.error}")
 
 
 def _int(value: Any) -> int:

@@ -76,6 +76,7 @@ class FakeClient:
         fail_inbox=False,
         group_list=None,
         approve_fails=False,
+        group_detail=None,
     ):
         self.calls: list[tuple[str, dict]] = []
         self.private_msgs: list[tuple[int, list]] = []
@@ -90,6 +91,9 @@ class FakeClient:
         self.approve_fails = approve_fails
         self.canonical_flag_fails = False
         self.leaves: list[int] = []
+        # 群详情接口：模拟 NapCat 的 get_group_detail_info。
+        # None 表示协议端不支持（会返回 retcode 1404）。
+        self.group_detail = group_detail
 
     @staticmethod
     def _failed(retcode, wording):
@@ -106,6 +110,10 @@ class FakeClient:
         self.calls.append((api, kwargs))
         if api in ("get_group_info", "get_group_info_ex"):
             return dict(self.group_payload)
+        if api == "get_group_detail_info":
+            if self.group_detail is None:
+                self._failed(1404, "unknown action")
+            return dict(self.group_detail)
         if api in ("_get_group_notice", "get_group_notice"):
             if self.fail_notice:
                 self._failed(1404, "unknown action")
@@ -775,6 +783,7 @@ print("T) 场景19：群介绍( group_memo )的识别与公告实体还原")
 from astrbot_plugin_group_invite_auto_approve.core.group_info import (  # noqa: E402
     GroupInfo as GI,
     _notice_text,
+    fetch_group_info,
 )
 
 # QQ 会在群主未单独填写群介绍时，用公告预览填充 group_memo
@@ -789,24 +798,179 @@ check("命中公告序号", g_preview.memo_notice_index(), 1)
 log_text = g_preview.to_log_text()
 check("日志里标注了真实来源", "其实是群公告第 2 条的截断预览" in log_text, True)
 check("日志里说明是协议端映射问题", "announcement || description" in log_text, True)
-check("日志里提示可以打补丁", "见 README" in log_text, True)
-check("未打补丁时 intro 退回 memo", g_preview.intro, g_preview.memo)
-check("未打补丁时标记为公告", g_preview.intro_is_announcement, True)
+check("日志里提示升级协议端版本", "升级到 SnowLuma >= 1.14.21" in log_text, True)
+check("未返回 group_description 时 intro 退回 memo", g_preview.intro, g_preview.memo)
+check("未返回 group_description 时标记为公告", g_preview.intro_is_announcement, True)
 
-# 打了补丁：协议端额外返回 group_description
-g_patched = GI(
+# SnowLuma >= 1.14.21：协议端原生返回 group_description
+g_described = GI(
     group_id=6,
     name="萤",
     memo="【napcat新版功能缺失的恢复方法】\n…\ndocker exec napcat",
     description="来来米哈游！",
     notices=["【napcat新版功能缺失的恢复方法】\n…\ndocker exec napcat sed -i 'x' /app/napcat/napcat.mjs"],
 )
-check("打了补丁时 intro 用真群简介", g_patched.intro, "来来米哈游！")
-check("打了补丁时不再标记为公告", g_patched.intro_is_announcement, False)
-check("打了补丁时日志说明来源", "协议端 group_description" in g_patched.to_log_text(), True)
-check("memo 仍保留原语义（公告）", g_patched.memo.startswith("【napcat"), True)
-check("真群简介进入关键词语料", g_patched.matched_keywords(["米哈游"]), ["米哈游"])
-check("to_dict 带出真群简介", g_patched.to_dict()["intro"], "来来米哈游！")
+check("有 group_description 时 intro 用真群简介", g_described.intro, "来来米哈游！")
+check("有 group_description 时不再标记为公告", g_described.intro_is_announcement, False)
+check("有 group_description 时日志说明来源", "协议端 group_description" in g_described.to_log_text(), True)
+check("memo 仍保留原语义（公告）", g_described.memo.startswith("【napcat"), True)
+check("真群简介进入关键词语料", g_described.matched_keywords(["米哈游"]), ["米哈游"])
+check("to_dict 带出真群简介", g_described.to_dict()["intro"], "来来米哈游！")
+
+# {group_memo} 占位符与日志里的「群介绍」保持同一口径：
+# 优先真群简介，取不到时才退回 group_memo 原值
+from astrbot_plugin_group_invite_auto_approve.core.notify import (  # noqa: E402
+    build_variables,
+)
+
+check(
+    "{group_memo} 无 group_description 时退回 memo",
+    build_variables(g_preview)["group_memo"],
+    g_preview.memo,
+)
+check(
+    "{group_memo} 有 group_description 时用真群简介",
+    build_variables(g_described)["group_memo"],
+    "来来米哈游！",
+)
+check(
+    "{group_memo} 与日志「群介绍」同口径",
+    build_variables(g_described)["group_memo"],
+    g_described.intro,
+)
+
+# ---------------------------------------------------------------------------
+# T2) 跨协议端：同一套采集逻辑要同时吃下 SnowLuma 与 NapCat 的返回形状
+# ---------------------------------------------------------------------------
+print()
+print("=" * 70)
+print("T2) 场景19b：SnowLuma / NapCat 跨协议端字段兼容")
+print("    NapCat v4.18.19 的 get_group_info 不返回任何群简介字段，")
+print("    只能补问 get_group_detail_info（字段名是 fingerMemo）。")
+
+# ① SnowLuma >= 1.14.21：group_memo（公告）与 group_description（真简介）并存
+c_sl = FakeClient(group_payload={
+    "group_id": 10001,
+    "group_name": "示例群",
+    "group_remark": "",
+    "member_count": 456,
+    "max_member_count": 1000,
+    "group_create_time": 1600000000,
+    "group_level": 3,
+    "group_all_shut": 0,
+    "group_memo": "【公告】群规第一条：不许刷屏",
+    "group_description": "这里是真正的群简介",
+})
+sl = asyncio.run(fetch_group_info(c_sl, 10001, fetch_notice=False))
+check("SnowLuma 新版：用 group_description", sl.intro, "这里是真正的群简介")
+check("SnowLuma 新版：来源标注", sl.description_source, "group_description")
+check("SnowLuma 新版：memo 保留原语义", sl.memo, "【公告】群规第一条：不许刷屏")
+check(
+    "SnowLuma 新版：不额外补问详情",
+    [a for a, _ in c_sl.calls if a == "get_group_detail_info"],
+    [],
+)
+
+# ② SnowLuma <= 1.14.20：只有 group_memo，且它其实是公告的截断预览
+notice_line = "【公告】群规第一条：不许刷屏"
+c_sl20 = FakeClient(
+    group_payload={
+        "group_id": 10002,
+        "group_name": "老版示例群",
+        "member_count": 100,
+        "max_member_count": 500,
+        "group_all_shut": 0,
+        "group_memo": notice_line,
+    },
+    notice=[notice_line, "第二条公告"],
+    fail_notice=False,
+)
+sl20 = asyncio.run(fetch_group_info(c_sl20, 10002, fetch_notice=True))
+check("SnowLuma 老版：退回 group_memo", sl20.intro, notice_line)
+check("SnowLuma 老版：仍标记为公告预览", sl20.intro_is_announcement, True)
+check("SnowLuma 老版：description 为空", sl20.description, "")
+
+# ③ NapCat 已入群：get_group_info 只有 6 个基础字段 -> 补问 get_group_detail_info
+c_nc = FakeClient(
+    group_payload={
+        "group_id": 20002,
+        "group_name": "纳猫群",
+        "group_remark": "我的备注",
+        "member_count": 688,
+        "max_member_count": 1000,
+        "group_all_shut": 0,
+    },
+    group_detail={
+        "group_id": 20002,
+        "group_name": "纳猫群",
+        "group_remark": "",
+        "member_count": 688,
+        "max_member_count": 1000,
+        "group_all_shut": 0,
+        "fingerMemo": "每日新资讯，新瓜，活动分享",
+        "richFingerMemo": "每日新资讯，新瓜，活动分享（富文本）",
+    },
+)
+nc = asyncio.run(fetch_group_info(c_nc, 20002, fetch_notice=False))
+check("NapCat 已入群：补问后拿到群简介", nc.intro, "每日新资讯，新瓜，活动分享")
+check("NapCat 已入群：来源标注 fingerMemo", nc.description_source, "fingerMemo")
+check(
+    "NapCat 已入群：确实补问了群详情接口",
+    [a for a, _ in c_nc.calls if a == "get_group_detail_info"],
+    ["get_group_detail_info"],
+)
+check("NapCat 已入群：补问不覆盖已有群名", nc.name, "纳猫群")
+check("NapCat 已入群：补问不覆盖已有备注", nc.remark, "我的备注")
+check("NapCat 已入群：memo 为空（该端不返回 group_memo）", nc.memo, "")
+check("NapCat 已入群：不再误判为公告", nc.intro_is_announcement, False)
+
+# ④ NapCat 未入群：get_group_info 直接展开原始详情，fingerMemo 就在里面 -> 无需补问
+c_nc2 = FakeClient(group_payload={
+    "group_id": 20003,
+    "groupName": "未入群的群",
+    "group_name": "未入群的群",
+    "group_remark": "",
+    "member_count": 300,
+    "max_member_count": 500,
+    "group_all_shut": 0,
+    "fingerMemo": "米游聊天群，可聊崩铁、绝区零",
+})
+nc2 = asyncio.run(fetch_group_info(c_nc2, 20003, fetch_notice=False))
+check("NapCat 未入群：直接用 fingerMemo", nc2.intro, "米游聊天群，可聊崩铁、绝区零")
+check(
+    "NapCat 未入群：无需补问",
+    [a for a, _ in c_nc2.calls if a == "get_group_detail_info"],
+    [],
+)
+
+# ⑤ 只有 richFingerMemo 时也要兜住
+c_nc3 = FakeClient(group_payload={
+    "group_id": 20004,
+    "group_name": "只有富文本简介",
+    "member_count": 50,
+    "max_member_count": 200,
+    "group_all_shut": 0,
+    "richFingerMemo": "富文本群简介",
+})
+nc3 = asyncio.run(fetch_group_info(c_nc3, 20004, fetch_notice=False))
+check("NapCat：richFingerMemo 兜底", nc3.intro, "富文本群简介")
+check("NapCat：来源标注 richFingerMemo", nc3.description_source, "richFingerMemo")
+
+# ⑥ 两个接口都拿不到群简介时，不能报错、不能崩
+c_none = FakeClient(
+    group_payload={
+        "group_id": 20005,
+        "group_name": "没有简介的群",
+        "member_count": 10,
+        "max_member_count": 200,
+        "group_all_shut": 0,
+    },
+    group_detail={"group_id": 20005, "group_name": "没有简介的群"},
+)
+none_info = asyncio.run(fetch_group_info(c_none, 20005, fetch_notice=False))
+check("都拿不到时 intro 为空", none_info.intro, "")
+check("都拿不到时仍拿到群名", none_info.name, "没有简介的群")
+check("都拿不到时不产生错误条目", none_info.errors, [])
 
 # 真正独立的群介绍不应被误判
 g_real = GI(

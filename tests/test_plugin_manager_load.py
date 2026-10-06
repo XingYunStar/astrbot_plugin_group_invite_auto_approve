@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 import types
 
@@ -76,7 +77,12 @@ async def main():
         return
     print("   ", entry)
     check("display_name", entry.display_name, "群邀请自动处理")
-    check("version", entry.version, "v1.0.0")
+    # 版本号由 metadata.yaml 维护，这里只校验格式（写死具体版本会在每次发版时失效）
+    check(
+        "version 形如 vX.Y.Z",
+        bool(re.fullmatch(r"v\d+\.\d+\.\d+", entry.version or "")),
+        True,
+    )
     check("activated", entry.activated)
     check("配置对象已注入", entry.config is not None)
     check("实例已创建", entry.star_cls is not None)
