@@ -220,6 +220,8 @@ function renderExemptUsers() {
 }
 
 function addKeywordsFromInput() {
+  addItemsFromInput("keywordInput", "conditions.keywords");
+}
 
 function addExemptFromInput() {
   addItemsFromInput("exemptInput", "conditions.verify_exempt_users", (v) =>

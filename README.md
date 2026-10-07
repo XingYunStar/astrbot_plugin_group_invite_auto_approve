@@ -2,7 +2,7 @@
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.24.2-ff69b4)](https://github.com/AstrBotDevs/AstrBot)
 ![平台](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-aiocqhttp-blue)
-![版本](https://img.shields.io/badge/version-v2.1.0-blue)
+![版本](https://img.shields.io/badge/version-v2.1.1-blue)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 # 群邀请自动处理

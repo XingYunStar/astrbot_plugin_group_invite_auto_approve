@@ -95,6 +95,46 @@ for asset in ("index.html", "app.js", "api.js", "styles.css"):
 
 print()
 print("=" * 70)
+print("D2) 页面脚本语法检查（前端没有任何其它测试覆盖，必须在这里挡住）")
+# 背景：app.js 曾经因为少了一个闭合括号而整份脚本语法错误 ——
+# 浏览器按 <script type="module"> 加载时会直接 SyntaxError，
+# 页面上的所有交互（配置渲染、邀请记录、调试工具）全部失效，
+# 但后端接口测试完全测不出来。这里用 node 做一次真正的语法检查。
+#
+# 注意：不能直接 `node --check x.js` —— 对带 import 的 .js，node 会先按
+# CommonJS 解析，遇到语法错误时反而可能报成功（实测 exit 0 的假阴性）。
+# 复制成 .mjs 强制按 ES Module 解析才可靠。
+import shutil as _shutil  # noqa: E402
+import subprocess as _subprocess  # noqa: E402
+import tempfile as _tempfile  # noqa: E402
+
+_node = _shutil.which("node")
+if not _node:
+    # 不把「环境里没装 node」当成插件缺陷：AstrBot 官方镜像未必带 node。
+    # 但必须显式说出来，不能静默跳过。
+    print("      SKIP  环境里没有 node，跳过页面脚本语法检查")
+    print("            装了 node 的环境会自动执行这一段（本地容器为 /usr/bin/node）")
+else:
+    check("找到 node 可执行文件", True)
+    for js in sorted(pages_root.rglob("*.js")):
+        with _tempfile.TemporaryDirectory() as tmp:
+            probe = Path(tmp) / (js.stem + ".mjs")
+            probe.write_text(js.read_text(encoding="utf-8"), encoding="utf-8")
+            proc = _subprocess.run(
+                [_node, "--check", str(probe)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        rel = js.relative_to(pages_root)
+        ok = proc.returncode == 0
+        check(f"{rel} 语法合法", ok)
+        if not ok:
+            for line in (proc.stderr or "").strip().splitlines()[:6]:
+                print("      ", line)
+
+print()
+print("=" * 70)
 print("E) i18n 页面标题")
 i18n_dir = PLUGIN_DIR / ".astrbot-plugin" / "i18n"
 check("i18n 目录存在", i18n_dir.is_dir())
